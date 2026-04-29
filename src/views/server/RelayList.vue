@@ -13,45 +13,50 @@
     <div class="add-row">
       <el-input v-model="newIp" placeholder="IP address" @keyup.enter="add" clearable />
       <el-button type="primary" :loading="adding" :disabled="!newIp.trim()" @click="add">
-        <el-icon><Plus /></el-icon> Block
+        <el-icon><Plus /></el-icon> Add
       </el-button>
     </div>
 
-    <div class="entries" v-if="items.length">
-      <div v-for="item in items" :key="item.ip" class="entry">
-        <div class="ip">{{ item.ip }}</div>
-        <div class="stats text-muted text-sm" v-if="item.stats">{{ item.stats }}</div>
-        <el-button size="small" text type="danger" @click="remove(item.ip)">
-          <el-icon><Delete /></el-icon> Unblock
-        </el-button>
-      </div>
+    <pre class="output" v-if="raw">{{ raw }}</pre>
+    <div v-else-if="!loading" class="empty text-muted">No entries.</div>
+
+    <div v-if="ips.length" class="ip-tags mt-2">
+      <el-tag v-for="ip in ips" :key="ip" closable @close="remove(ip)">{{ ip }}</el-tag>
     </div>
-    <div v-else-if="!loading" class="empty text-muted">No blocked IPs.</div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sendCmd } from '@/api/rustdesk'
+
+const TARGET = '21117'
 
 const props = defineProps({
   title: { type: String, required: true },
   description: String,
-  target: { type: String, required: true },
-  cmd: { type: String, required: true },
-  parser: { type: Function, required: true },
-  unblockSuffix: { type: String, default: '-' },
+  readCmd: { type: String, required: true },
+  addCmd: { type: String, required: true },
+  removeCmd: { type: String, required: true },
 })
 
-const items = ref([])
+const raw = ref('')
 const loading = ref(false)
 const adding = ref(false)
 const newIp = ref('')
 
-async function quiet (option = '') {
+const ips = computed(() => {
+  if (!raw.value) return []
+  return String(raw.value)
+    .split(/[|\n]+/)
+    .map(s => s.trim())
+    .filter(s => s && /^[0-9a-fA-F:.]+$/.test(s))
+})
+
+async function quiet (cmd, option = '') {
   try {
-    const res = await sendCmd({ cmd: props.cmd, target: props.target, option })
+    const res = await sendCmd({ cmd, target: TARGET, option })
     return { ok: true, data: res?.data ?? '' }
   } catch (e) {
     return { ok: false, error: e?.message || 'Request failed' }
@@ -60,9 +65,9 @@ async function quiet (option = '') {
 
 async function load () {
   loading.value = true
-  const res = await quiet('')
+  const res = await quiet(props.readCmd)
   loading.value = false
-  if (res.ok) items.value = props.parser(res.data) || []
+  if (res.ok) raw.value = String(res.data || '').trim()
   else ElMessage.error(res.error)
 }
 
@@ -70,10 +75,10 @@ async function add () {
   const ip = newIp.value.trim()
   if (!ip) return
   adding.value = true
-  const res = await quiet(ip)
+  const res = await quiet(props.addCmd, ip)
   adding.value = false
   if (res.ok) {
-    ElMessage.success(`Blocked ${ip}`)
+    ElMessage.success(`Added ${ip}`)
     newIp.value = ''
     load()
   } else {
@@ -82,15 +87,15 @@ async function add () {
 }
 
 async function remove (ip) {
-  const ok = await ElMessageBox.confirm(`Unblock ${ip}?`, 'Confirm', {
-    confirmButtonText: 'Unblock',
+  const ok = await ElMessageBox.confirm(`Remove ${ip}?`, 'Confirm', {
+    confirmButtonText: 'Remove',
     cancelButtonText: 'Cancel',
     type: 'warning',
   }).catch(() => false)
   if (!ok) return
-  const res = await quiet(`${ip} ${props.unblockSuffix}`)
+  const res = await quiet(props.removeCmd, ip)
   if (res.ok) {
-    ElMessage.success(`Unblocked ${ip}`)
+    ElMessage.success(`Removed ${ip}`)
     load()
   } else {
     ElMessage.error(res.error)
@@ -110,47 +115,32 @@ onMounted(load)
   h3 { margin: 0; font-size: 15px; font-weight: 600; }
   p { margin: 4px 0 0; }
 }
-
 .add-row {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
 }
-
-.entries {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.entry {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+.output {
+  margin: 0;
   background: #f9fafb;
-  border-radius: var(--rd-radius-sm);
   border: 1px solid var(--rd-border);
-
-  .ip {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 13px;
-    font-weight: 500;
-    flex-shrink: 0;
-  }
-  .stats {
-    flex: 1;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  border-radius: var(--rd-radius-sm);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--rd-text-soft);
 }
-
+.ip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .empty {
   text-align: center;
-  padding: 24px;
+  padding: 16px;
   font-size: 13px;
 }
 </style>
