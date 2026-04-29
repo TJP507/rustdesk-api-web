@@ -1,54 +1,48 @@
 import { router } from '@/router'
-import { useRouteStore } from '@/store/router'
 import { useUserStore } from '@/store/user'
+import { useAppStore } from '@/store/app'
 import { getToken } from '@/utils/auth'
 import { pinia } from '@/store'
-import NProgress from 'nprogress' // progress bar
+import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { useAppStore } from '@/store/app' // progress bar style
-import { T } from '@/utils/i18n'
 
-NProgress.configure({ showSpinner: false }) // NProgress Configuration
+NProgress.configure({ showSpinner: false })
 
 const whiteList = ['/login', '/register']
-const routeStore = useRouteStore(pinia)
+const oauthPathPrefix = '/oauth/'
+
 const appStore = useAppStore(pinia)
 appStore.getAdminConfig()
-router.beforeEach(async (to, from, next) => {
 
-  document.title = T(to.meta?.title) + ' - ' + appStore.setting.title
+router.beforeEach(async (to, from, next) => {
   NProgress.start()
+  const title = to.meta?.title
+  document.title = title ? `${title} · ${appStore.setting.title}` : appStore.setting.title
+
+  // OAuth callback paths are public — they exchange a code into a token.
+  if (to.path.startsWith(oauthPathPrefix)) return next()
 
   const token = getToken()
   if (!token) {
-    //无token，跳转到登录
-    if (whiteList.indexOf(to.path) !== -1) {
-      next()
-    } else {
-      next(`/login?redirect=${to.path}`)
-    }
+    if (whiteList.includes(to.path)) return next()
+    return next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+  }
 
-  } else {
-    //有token
-
-    const userStore = useUserStore(pinia)
-
-    if (!userStore.route_names.length) {
-      const info = await userStore.info()
-      if (!info) {
-        userStore.logout()
-        next(`/login?redirect=${to.path}`)
-      } else {
-        next({ ...to, replace: true })
-      }
-    }/* else if (to.path === '/404') {
-      next({path: to.redirectedFrom?.fullPath, replace: true})
-    }*/ else {
-      next()
+  const userStore = useUserStore(pinia)
+  if (!userStore.loaded) {
+    const info = await userStore.info()
+    if (!info) {
+      userStore.logout()
+      return next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
     }
   }
+
+  // Block route if it requires a permission name the user doesn't have.
+  if (to.meta?.route && !userStore.canAccess(to.meta.route)) {
+    return next('/me')
+  }
+
+  next()
 })
 
-router.afterEach(() => {
-  NProgress.done()
-})
+router.afterEach(() => NProgress.done())
