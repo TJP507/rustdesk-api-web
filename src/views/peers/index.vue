@@ -1,8 +1,25 @@
 <template>
   <PageHeader title="Devices" subtitle="RustDesk peers connected to this server">
-    <el-button type="primary" @click="openCreate">
-      <el-icon><Plus /></el-icon> Add device
-    </el-button>
+    <el-dropdown trigger="click" @command="onAddCommand">
+      <el-button type="primary">
+        <el-icon><Plus /></el-icon> Add device <el-icon class="caret"><ArrowDown /></el-icon>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="manual">
+            <el-icon><Edit /></el-icon> Manual entry
+          </el-dropdown-item>
+          <el-dropdown-item command="linux" divided>
+            <span class="platform-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.083-2.127 2.96-2.6 5.0c-.225 1.116-.187 2.265.245 3.36.07.196.165.395.255.59-.32.85-.474 1.766-.42 2.7.043.751.296 1.49.825 2.122.59.66 1.5 1.07 2.45 1.156 1.32.13 2.44-.32 3.184-.85.76-.55 1.07-1.4 1.07-2.45 0-.5-.005-.83-.005-.83l.4.05.07.06c.55.55 1.5.85 2.5.65.55-.1 1.054-.4 1.444-.85a3.4 3.4 0 0 0 .76-1.55c.17-.65.13-1.3.04-1.95-.097-.732-.4-1.486-.78-2.18l.04-.04c.41-.46.7-.95.85-1.5l.7-.18a2.46 2.46 0 0 0 1.84-2.05 2.6 2.6 0 0 0-.33-1.96 4.13 4.13 0 0 0-1.14-1.13c-.49-.317-1.05-.495-1.65-.43-.137-.84-.345-1.685-.65-2.485-.4-1.045-1.02-2.05-1.99-2.66-.91-.575-2.07-.84-3.32-.84z"/></svg></span>
+            Download Linux install script
+          </el-dropdown-item>
+          <el-dropdown-item command="windows">
+            <span class="platform-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M0 3.5l9.6-1.3v9.5H0V3.5zM10.8 2L24 .2v11.5H10.8V2zM0 12.9h9.6v9.6L0 21.2v-8.3zm10.8 0H24v10.9L10.8 22V12.9z"/></svg></span>
+            Download Windows install script
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
     <el-popover v-model:visible="importOpen" :width="320" trigger="click" placement="bottom-end">
       <template #reference>
         <el-button>
@@ -228,6 +245,9 @@ import FormDrawer from '@/components/FormDrawer.vue'
 import PlatformIcon from '@/components/PlatformIcon.vue'
 import { useResource } from '@/composables/useResource'
 import { useDeviceGroupLookup, useUserLookup } from '@/composables/useLookups'
+import { useAppStore } from '@/store/app'
+
+const appStore = useAppStore()
 import * as peerApi from '@/api/peer'
 import * as addressBookApi from '@/api/address_book'
 import * as abCollectionApi from '@/api/address_book_collection'
@@ -354,6 +374,146 @@ const form = reactive(emptyForm())
 function openCreate () {
   Object.assign(form, emptyForm())
   formOpen.value = true
+}
+
+function onAddCommand (cmd) {
+  if (cmd === 'manual') openCreate()
+  else if (cmd === 'linux') downloadInstallScript('linux')
+  else if (cmd === 'windows') downloadInstallScript('windows')
+}
+
+function downloadInstallScript (platform) {
+  const cfg = appStore.setting.rustdeskConfig || {}
+  const idServer = cfg.id_server || ''
+  const relayServer = cfg.relay_server || ''
+  const apiServer = cfg.api_server || window.location.origin
+  const key = cfg.key || ''
+
+  if (!idServer || !key) {
+    ElMessage.warning('Server config not loaded yet — try again in a moment.')
+    return
+  }
+
+  const text = platform === 'linux'
+    ? buildLinuxScript({ idServer, relayServer, apiServer, key })
+    : buildWindowsScript({ idServer, relayServer, apiServer, key })
+  const filename = platform === 'linux' ? 'rustdesk-install.sh' : 'rustdesk-install.bat'
+  const blob = new Blob([text], { type: platform === 'linux' ? 'text/x-shellscript' : 'text/plain' })
+  downBlob(blob, filename)
+  ElMessage.success(`${filename} downloaded`)
+}
+
+function buildLinuxScript ({ idServer, relayServer, apiServer, key }) {
+  return `#!/usr/bin/env bash
+# RustDesk client installer + auto-config
+# Generated for: ${idServer}
+set -euo pipefail
+
+ID_SERVER="\${ID_SERVER:-${idServer}}"
+RELAY_SERVER="\${RELAY_SERVER:-${relayServer}}"
+API_SERVER="\${API_SERVER:-${apiServer}}"
+KEY="\${KEY:-${key}}"
+
+echo "==> Installing RustDesk client (server: $ID_SERVER)"
+
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)  PKG_ARCH="x86_64" ;;
+  aarch64) PKG_ARCH="aarch64" ;;
+  *) echo "Unsupported arch: $ARCH"; exit 1 ;;
+esac
+
+VERSION="1.4.2"
+TMP=$(mktemp -d)
+cd "$TMP"
+
+if command -v apt-get >/dev/null 2>&1; then
+  curl -fsSL "https://github.com/rustdesk/rustdesk/releases/download/$VERSION/rustdesk-$VERSION-$PKG_ARCH.deb" -o rustdesk.deb
+  sudo apt-get install -y ./rustdesk.deb
+elif command -v dnf >/dev/null 2>&1; then
+  curl -fsSL "https://github.com/rustdesk/rustdesk/releases/download/$VERSION/rustdesk-$VERSION-$PKG_ARCH.rpm" -o rustdesk.rpm
+  sudo dnf install -y ./rustdesk.rpm
+elif command -v pacman >/dev/null 2>&1; then
+  sudo pacman -S --noconfirm rustdesk-bin || {
+    curl -fsSL "https://github.com/rustdesk/rustdesk/releases/download/$VERSION/rustdesk-$VERSION-$PKG_ARCH.deb" -o rustdesk.deb
+    echo "No native package available — manual install required: $TMP/rustdesk.deb"
+    exit 1
+  }
+else
+  echo "Unsupported package manager. Install RustDesk manually then re-run with INSTALL=skip."
+  exit 1
+fi
+
+echo "==> Writing config"
+CONFIG_DIRS=("$HOME/.config/rustdesk" "/root/.config/rustdesk")
+for DIR in "\${CONFIG_DIRS[@]}"; do
+  sudo mkdir -p "$DIR"
+  sudo tee "$DIR/RustDesk2.toml" >/dev/null <<EOF
+rendezvous_server = '$ID_SERVER'
+nat_type = 1
+serial = 0
+
+[options]
+custom-rendezvous-server = '$ID_SERVER'
+relay-server = '$RELAY_SERVER'
+api-server = '$API_SERVER'
+key = '$KEY'
+EOF
+done
+
+echo "==> Done. Launch RustDesk from your menu or run: rustdesk"
+`
+}
+
+function buildWindowsScript ({ idServer, relayServer, apiServer, key }) {
+  return `@echo off
+REM RustDesk client installer + auto-config
+REM Generated for: ${idServer}
+setlocal EnableDelayedExpansion
+
+set "ID_SERVER=${idServer}"
+set "RELAY_SERVER=${relayServer}"
+set "API_SERVER=${apiServer}"
+set "KEY=${key}"
+set "VERSION=1.4.2"
+
+echo ==^> Installing RustDesk client (server: %ID_SERVER%)
+
+REM Detect arch
+if /I "%PROCESSOR_ARCHITECTURE%"=="AMD64" (set "ARCH=x86_64") else (set "ARCH=x86_64")
+
+set "URL=https://github.com/rustdesk/rustdesk/releases/download/%VERSION%/rustdesk-%VERSION%-%ARCH%.exe"
+set "TMP_EXE=%TEMP%\\rustdesk-%VERSION%.exe"
+
+echo ==^> Downloading %URL%
+powershell -NoProfile -Command "Invoke-WebRequest -Uri '%URL%' -OutFile '%TMP_EXE%'" || goto :err
+
+echo ==^> Installing (silent)
+"%TMP_EXE%" --silent-install || goto :err
+
+echo ==^> Writing config
+set "CFG_DIR=%APPDATA%\\RustDesk\\config"
+if not exist "%CFG_DIR%" mkdir "%CFG_DIR%"
+
+>"%CFG_DIR%\\RustDesk2.toml" (
+  echo rendezvous_server = '%ID_SERVER%'
+  echo nat_type = 1
+  echo serial = 0
+  echo.
+  echo [options]
+  echo custom-rendezvous-server = '%ID_SERVER%'
+  echo relay-server = '%RELAY_SERVER%'
+  echo api-server = '%API_SERVER%'
+  echo key = '%KEY%'
+)
+
+echo ==^> Done. Launch RustDesk from the Start menu.
+goto :eof
+
+:err
+echo Installation failed.
+exit /b 1
+`
 }
 
 function openEdit (row) {
@@ -547,5 +707,21 @@ onMounted(() => {
 .copyable {
   cursor: pointer;
   &:hover { color: var(--rd-accent-hover, #6366f1); }
+}
+.caret {
+  margin-left: 4px;
+  font-size: 10px;
+}
+</style>
+
+<style lang="scss">
+.el-dropdown-menu .platform-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  margin-right: 6px;
+  color: var(--rd-text-soft);
+  vertical-align: middle;
 }
 </style>
