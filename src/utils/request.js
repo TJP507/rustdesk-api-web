@@ -19,15 +19,26 @@ service.interceptors.request.use(
   error => Promise.reject(error),
 )
 
+function isPublicRoute () {
+  const hash = window.location.hash || ''
+  return hash.startsWith('#/login') || hash.startsWith('#/register') || hash.startsWith('#/oauth')
+}
+
 service.interceptors.response.use(
   response => {
     const res = response.data
     if (Array.isArray(res)) return res
     if (res.code !== 0) {
-      ElMessage({ message: res.message || 'Error', type: 'error', duration: 5000 })
-      if (res.code === 403) {
+      // Suppress noisy "must auth" errors when the caller is anonymous —
+      // those are expected on public pages and the route guard handles redirects.
+      const onPublic = isPublicRoute()
+      const silent = res.code === 403 && onPublic
+      if (!silent) {
+        ElMessage({ message: res.message || 'Error', type: 'error', duration: 5000 })
+      }
+      if (res.code === 403 && !onPublic) {
         removeToken()
-        window.location.reload()
+        if (!isPublicRoute()) window.location.hash = '#/login'
       }
       return Promise.reject(res)
     }

@@ -56,18 +56,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { register } from '@/api/user'
-import { useAppStore } from '@/store/app'
+import { loginOptions } from '@/api/login'
 
 const router = useRouter()
-const appStore = useAppStore()
 
 const formRef = ref(null)
 const loading = ref(false)
 const configLoaded = ref(false)
+const canRegister = ref(false)
 
 const form = reactive({
   username: '',
@@ -76,7 +76,6 @@ const form = reactive({
   confirm: '',
 })
 
-const canRegister = computed(() => !!appStore.setting.appConfig?.register_status)
 
 const rules = {
   username: [{ required: true, message: 'Username is required', trigger: 'blur' }],
@@ -122,7 +121,9 @@ async function submit () {
 }
 
 onMounted(async () => {
-  await appStore.getAppConfig().catch(() => {})
+  const res = await loginOptions().catch(() => null)
+  const payload = Array.isArray(res) ? null : res?.data
+  canRegister.value = !!payload?.register
   configLoaded.value = true
 })
 </script>

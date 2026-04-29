@@ -65,17 +65,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { useAppStore } from '@/store/app'
 import { loginOptions, captcha } from '@/api/login'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const appStore = useAppStore()
 
 const formRef = ref(null)
 const loading = ref(false)
@@ -94,13 +92,15 @@ const rules = {
   password: [{ required: true, message: 'Password is required', trigger: 'blur' }],
 }
 
-const canRegister = computed(() => !!appStore.setting.appConfig?.register_status)
+const canRegister = ref(false)
+const needCaptcha = ref(false)
 
 function resolveIcon (p) {
   return p.icon ? p.icon : 'Link'
 }
 
 async function loadCaptcha () {
+  if (!needCaptcha.value) return
   const res = await captcha().catch(() => null)
   if (res && res.data && res.data.img) {
     captchaImg.value = res.data.img
@@ -111,13 +111,18 @@ async function loadCaptcha () {
   }
 }
 
-async function loadProviders () {
+async function loadOptions () {
   const res = await loginOptions().catch(() => null)
-  if (Array.isArray(res)) {
-    providers.value = res.filter(p => p && p.op)
-  } else if (res && Array.isArray(res.data)) {
-    providers.value = res.data.filter(p => p && p.op)
-  }
+  // loginOptions returns either a raw array (legacy) or the wrapped
+  // { code, data: { ops, register, need_captcha, ... } } shape.
+  let payload = null
+  if (Array.isArray(res)) payload = { ops: res }
+  else if (res && res.data) payload = res.data
+  if (!payload) return
+  providers.value = (payload.ops || []).filter(p => p && p.op)
+  canRegister.value = !!payload.register
+  needCaptcha.value = !!payload.need_captcha
+  if (needCaptcha.value) loadCaptcha()
 }
 
 function detectPlatform () {
@@ -172,11 +177,7 @@ async function submit () {
   })
 }
 
-onMounted(() => {
-  appStore.getAppConfig()
-  loadProviders()
-  loadCaptcha()
-})
+onMounted(loadOptions)
 </script>
 
 <style scoped lang="scss">
