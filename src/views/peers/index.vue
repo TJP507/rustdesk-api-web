@@ -246,6 +246,7 @@ import PlatformIcon from '@/components/PlatformIcon.vue'
 import { useResource } from '@/composables/useResource'
 import { useDeviceGroupLookup, useUserLookup } from '@/composables/useLookups'
 import { useAppStore } from '@/store/app'
+import { resolveInstallTargets } from '@/utils/installConfig'
 
 const appStore = useAppStore()
 import * as peerApi from '@/api/peer'
@@ -384,10 +385,11 @@ function onAddCommand (cmd) {
 
 function downloadInstallScript (platform) {
   const cfg = appStore.setting.rustdeskConfig || {}
-  const idServer = cfg.id_server || ''
-  const relayServer = cfg.relay_server || ''
-  const apiServer = cfg.api_server || window.location.origin
-  const key = cfg.key || ''
+  const targets = resolveInstallTargets(cfg)
+  const idServer = targets.id_server
+  const relayServer = targets.relay_server
+  const apiServer = targets.api_server || window.location.origin
+  const key = targets.key
 
   if (!idServer || !key) {
     ElMessage.warning('Server config not loaded yet — try again in a moment.')

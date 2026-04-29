@@ -94,6 +94,10 @@
       </div>
     </el-tab-pane>
 
+    <el-tab-pane label="Install scripts" name="install">
+      <InstallScriptSettings />
+    </el-tab-pane>
+
     <el-tab-pane label="Saved commands" name="cmds">
       <ServerCmdList />
     </el-tab-pane>
@@ -108,6 +112,7 @@ import ServerStatusCard from './ServerStatusCard.vue'
 import IpListPanel from './IpListPanel.vue'
 import RelayList from './RelayList.vue'
 import ServerCmdList from './ServerCmdList.vue'
+import InstallScriptSettings from './InstallScriptSettings.vue'
 import { sendCmd } from '@/api/rustdesk'
 import { useAppStore } from '@/store/app'
 
