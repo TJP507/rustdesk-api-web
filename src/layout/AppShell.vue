@@ -4,11 +4,7 @@
     <div class="main">
       <Topbar :collapsed="collapsed" @toggle="toggleSidebar" />
       <div class="content">
-        <router-view v-slot="{ Component, route }">
-          <transition name="fade" mode="out-in">
-            <component :is="Component" :key="route.fullPath" />
-          </transition>
-        </router-view>
+        <router-view />
       </div>
     </div>
   </div>
@@ -43,9 +39,4 @@ const toggleSidebar = () => appStore.sideCollapse()
   overflow: auto;
   padding: 24px 28px 32px;
 }
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.fade-enter-from { opacity: 0; transform: translateY(4px); }
-.fade-leave-to { opacity: 0; transform: translateY(-4px); }
 </style>
